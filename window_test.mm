@@ -423,6 +423,31 @@ pid_t get_window_pid(CGWindowID window_id) {
   return pid;
 }
 
+// 激活目标窗口 (使其获得焦点)
+bool activate_window(pid_t target_pid) {
+  if (target_pid <= 0) {
+    std::cout << "Invalid target PID: " << target_pid << std::endl;
+    return false;
+  }
+
+  std::cout << "Activating window for process " << target_pid << std::endl;
+
+  // 使用NSRunningApplication激活应用
+  // 这会将整个应用带到前台
+  NSRunningApplication *app =
+      [NSRunningApplication runningApplicationWithProcessIdentifier:target_pid];
+  if (app) {
+    [app activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+    usleep(200000); // 等待窗口激活
+    std::cout << "Window activated using NSRunningApplication" << std::endl;
+    return true;
+  }
+
+  std::cout << "Failed to activate window using NSRunningApplication"
+            << std::endl;
+  return false;
+}
+
 // 模拟鼠标点击 (使用全局事件注入)
 bool simulate_mouse_click(pid_t target_pid, CGPoint location,
                           bool is_double_click = false) {
@@ -433,6 +458,12 @@ bool simulate_mouse_click(pid_t target_pid, CGPoint location,
 
   std::cout << "Simulating mouse click at (" << location.x << ", " << location.y
             << ") for process " << target_pid << std::endl;
+
+  // 先激活窗口
+  if (!activate_window(target_pid)) {
+    std::cout << "Warning: Failed to activate window, click may not work"
+              << std::endl;
+  }
 
   // 首先移动鼠标到目标位置
   CGEventRef mouse_move =

@@ -19,6 +19,7 @@ find_library(FOUNDATION Foundation REQUIRED)
 find_library(SCREEN_CAPTURE_KIT ScreenCaptureKit REQUIRED)
 find_library(CORE_MEDIA CoreMedia REQUIRED)
 find_library(CORE_VIDEO CoreVideo REQUIRED)
+find_library(APP_KIT AppKit REQUIRED)
 
 target_link_libraries(window_test
     ${OpenCV_LIBS}
@@ -28,6 +29,7 @@ target_link_libraries(window_test
     ${SCREEN_CAPTURE_KIT}
     ${CORE_MEDIA}
     ${CORE_VIDEO}
+    ${APP_KIT}
 )
 
 # 包含OpenCV头文件
