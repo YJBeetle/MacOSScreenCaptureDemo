@@ -557,6 +557,141 @@ bool simulate_mouse_move(pid_t target_pid, CGPoint location) {
   return true;
 }
 
+// 模拟键盘按键 (使用全局事件注入)
+bool simulate_key_press(pid_t target_pid, CGKeyCode key_code, bool is_press) {
+  if (target_pid <= 0) {
+    std::cout << "Invalid target PID: " << target_pid << std::endl;
+    return false;
+  }
+
+  std::cout << "Simulating key " << (is_press ? "press" : "release")
+            << " for key code " << key_code << " in process " << target_pid
+            << std::endl;
+
+  // 先激活窗口
+  if (!activate_window(target_pid)) {
+    std::cout << "Warning: Failed to activate window, key press may not work"
+              << std::endl;
+  }
+
+  // 创建键盘事件
+  CGEventRef key_event =
+      CGEventCreateKeyboardEvent(nullptr,  // 源事件
+                                 key_code, // 键码
+                                 is_press  // true 为按下, false 为释放
+      );
+
+  if (!key_event) {
+    std::cout << "Failed to create keyboard event" << std::endl;
+    return false;
+  }
+
+  // 使用全局事件注入
+  CGEventPost(kCGHIDEventTap, key_event);
+
+  // 清理
+  CFRelease(key_event);
+
+  std::cout << "Key " << (is_press ? "press" : "release")
+            << " simulation completed" << std::endl;
+  return true;
+}
+
+// 模拟键盘输入字符串
+bool simulate_key_input(pid_t target_pid, const std::string &text) {
+  if (target_pid <= 0) {
+    std::cout << "Invalid target PID: " << target_pid << std::endl;
+    return false;
+  }
+
+  std::cout << "Simulating key input: \"" << text << "\" for process "
+            << target_pid << std::endl;
+
+  // 先激活窗口
+  if (!activate_window(target_pid)) {
+    std::cout << "Warning: Failed to activate window, key input may not work"
+              << std::endl;
+  }
+
+  // CGKeyCode 映射表 (基于标准美式键盘布局)
+  static std::map<char, CGKeyCode> key_map = {
+      {'a', 0},  {'b', 11},  {'c', 8},  {'d', 2},   {'e', 14}, {'f', 3},
+      {'g', 5},  {'h', 4},   {'i', 34}, {'j', 38},  {'k', 40}, {'l', 37},
+      {'m', 46}, {'n', 45},  {'o', 31}, {'p', 35},  {'q', 12}, {'r', 15},
+      {'s', 1},  {'t', 17},  {'u', 32}, {'v', 9},   {'w', 13}, {'x', 7},
+      {'y', 16}, {'z', 6},   {'A', 0},  {'B', 11},  {'C', 8},  {'D', 2},
+      {'E', 14}, {'F', 3},   {'G', 5},  {'H', 4},   {'I', 34}, {'J', 38},
+      {'K', 40}, {'L', 37},  {'M', 46}, {'N', 45},  {'O', 31}, {'P', 35},
+      {'Q', 12}, {'R', 15},  {'S', 1},  {'T', 17},  {'U', 32}, {'V', 9},
+      {'W', 13}, {'X', 7},   {'Y', 16}, {'Z', 6},   {' ', 49}, {'1', 18},
+      {'2', 19}, {'3', 20},  {'4', 21}, {'5', 23},  {'6', 22}, {'7', 26},
+      {'8', 28}, {'9', 25},  {'0', 29}, {'!', 18},  {'@', 19}, {'#', 20},
+      {'$', 21}, {'%', 23},  {'^', 22}, {'&', 26},  {'*', 28}, {'(', 25},
+      {')', 29}, {'-', 27},  {'_', 27}, {'=', 24},  {'+', 24}, {'[', 33},
+      {']', 30}, {'{', 33},  {'}', 30}, {'\\', 42}, {'|', 42}, {';', 41},
+      {':', 41}, {'\'', 39}, {'"', 39}, {',', 43},  {'<', 43}, {'.', 47},
+      {'>', 47}, {'/', 44},  {'?', 44}, {'`', 50},  {'~', 50}};
+
+  for (char c : text) {
+    auto it = key_map.find(c);
+    CGKeyCode key_code;
+    bool need_shift = false;
+
+    if (it != key_map.end()) {
+      key_code = it->second;
+      // 检查是否需要Shift（通过比较小写和大写版本的键码）
+      if (isupper(c)) {
+        auto lower_it = key_map.find(tolower(c));
+        if (lower_it != key_map.end() && lower_it->second == key_code) {
+          need_shift = true;
+        }
+      }
+    } else {
+      std::cout << "Unsupported character: " << c << " (0x" << std::hex
+                << (int)c << ")" << std::endl;
+      continue;
+    }
+
+    // 如果是大写字母，先按下Shift
+    if (need_shift) {
+      simulate_key_press(target_pid, 56, true); // 左Shift键
+      usleep(10000);
+    }
+
+    // 按下键
+    if (!simulate_key_press(target_pid, key_code, true)) {
+      std::cout << "Failed to press key for character: " << c << std::endl;
+      if (need_shift) {
+        simulate_key_press(target_pid, 56, false); // 释放Shift
+      }
+      return false;
+    }
+    usleep(10000); // 短暂延迟
+
+    // 释放键
+    if (!simulate_key_press(target_pid, key_code, false)) {
+      std::cout << "Failed to release key for character: " << c << std::endl;
+      if (need_shift) {
+        simulate_key_press(target_pid, 56, false); // 释放Shift
+      }
+      return false;
+    }
+    usleep(10000); // 短暂延迟
+
+    // 释放Shift
+    if (need_shift) {
+      simulate_key_press(target_pid, 56, false);
+      usleep(10000);
+    }
+
+    // 字符间延迟
+    usleep(50000);
+  }
+
+  std::cout << "Key input simulation completed" << std::endl;
+  return true;
+}
+
 // 测试输入模拟方法
 void test_input_simulation(CGWindowID window_id, const WindowInfo &win_info) {
   std::cout << std::endl << "=== Testing Input Simulation ===" << std::endl;
@@ -598,8 +733,19 @@ void test_input_simulation(CGWindowID window_id, const WindowInfo &win_info) {
     return;
   }
 
+  std::cout << std::endl << "Testing keyboard input simulation..." << std::endl;
+
+  // 等待一下让窗口响应点击
+  usleep(1000000); // 1秒
+
+  // 模拟键盘输入字符串
+  if (!simulate_key_input(target_pid, "Hello World")) {
+    std::cout << "Keyboard input simulation failed" << std::endl;
+    return;
+  }
+
   std::cout << "Input simulation test completed successfully!" << std::endl;
-  std::cout << "Check if the target window responded to the simulated click."
+  std::cout << "Check if the target window responded to the simulated inputs."
             << std::endl;
 }
 
