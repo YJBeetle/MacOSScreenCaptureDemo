@@ -423,7 +423,7 @@ pid_t get_window_pid(CGWindowID window_id) {
   return pid;
 }
 
-// 模拟鼠标点击 (使用CGEvent PostToPid)
+// 模拟鼠标点击 (使用全局事件注入)
 bool simulate_mouse_click(pid_t target_pid, CGPoint location,
                           bool is_double_click = false) {
   if (target_pid <= 0) {
@@ -433,6 +433,20 @@ bool simulate_mouse_click(pid_t target_pid, CGPoint location,
 
   std::cout << "Simulating mouse click at (" << location.x << ", " << location.y
             << ") for process " << target_pid << std::endl;
+
+  // 首先移动鼠标到目标位置
+  CGEventRef mouse_move =
+      CGEventCreateMouseEvent(nullptr,            // 源事件
+                              kCGEventMouseMoved, // 事件类型
+                              location,           // 位置
+                              kCGMouseButtonLeft  // 鼠标按钮
+      );
+
+  if (mouse_move) {
+    CGEventPost(kCGHIDEventTap, mouse_move);
+    CFRelease(mouse_move);
+    usleep(50000); // 等待鼠标移动
+  }
 
   // 创建鼠标按下事件
   CGEventRef click_down =
@@ -466,10 +480,10 @@ bool simulate_mouse_click(pid_t target_pid, CGPoint location,
     CGEventSetIntegerValueField(click_up, kCGMouseEventClickState, 2);
   }
 
-  // 发送事件到目标进程
-  CGEventPostToPid(target_pid, click_down);
+  // 使用全局事件注入
+  CGEventPost(kCGHIDEventTap, click_down);
   usleep(10000); // 短暂延迟
-  CGEventPostToPid(target_pid, click_up);
+  CGEventPost(kCGHIDEventTap, click_up);
 
   // 清理
   CFRelease(click_down);
@@ -479,7 +493,7 @@ bool simulate_mouse_click(pid_t target_pid, CGPoint location,
   return true;
 }
 
-// 模拟鼠标移动 (使用CGEvent PostToPid)
+// 模拟鼠标移动 (使用全局事件注入)
 bool simulate_mouse_move(pid_t target_pid, CGPoint location) {
   if (target_pid <= 0) {
     std::cout << "Invalid target PID: " << target_pid << std::endl;
@@ -502,8 +516,8 @@ bool simulate_mouse_move(pid_t target_pid, CGPoint location) {
     return false;
   }
 
-  // 发送事件到目标进程
-  CGEventPostToPid(target_pid, mouse_move);
+  // 使用全局事件注入
+  CGEventPost(kCGHIDEventTap, mouse_move);
 
   // 清理
   CFRelease(mouse_move);
