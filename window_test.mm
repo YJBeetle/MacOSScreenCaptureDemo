@@ -21,6 +21,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 // 窗口信息结构体
@@ -382,15 +383,179 @@ void test_screencap_methods(CGWindowID window_id, const WindowInfo &win_info) {
               << captured_image.rows << std::endl;
 
     // 显示截图
-    std::cout << "Displaying screenshot with OpenCV..." << std::endl;
+    std::cout
+        << "Displaying screenshot with OpenCV (press any key to continue)..."
+        << std::endl;
     cv::imshow("Window Screenshot", captured_image);
-    cv::waitKey(0);
+    cv::waitKey(1000);
     cv::destroyAllWindows();
   } else {
     std::cout << "Screenshot failed" << std::endl;
   }
 
   std::cout << std::endl << "Screenshot test completed." << std::endl;
+}
+
+// 获取窗口的进程PID
+pid_t get_window_pid(CGWindowID window_id) {
+  // 获取窗口信息
+  CFArrayRef window_list =
+      CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, window_id);
+
+  if (!window_list || CFArrayGetCount(window_list) == 0) {
+    if (window_list)
+      CFRelease(window_list);
+    return -1;
+  }
+
+  CFDictionaryRef window_info =
+      (CFDictionaryRef)CFArrayGetValueAtIndex(window_list, 0);
+
+  // 获取进程PID
+  CFNumberRef pid_ref =
+      (CFNumberRef)CFDictionaryGetValue(window_info, kCGWindowOwnerPID);
+  pid_t pid = -1;
+  if (pid_ref) {
+    CFNumberGetValue(pid_ref, kCFNumberIntType, &pid);
+  }
+
+  CFRelease(window_list);
+  return pid;
+}
+
+// 模拟鼠标点击 (使用CGEvent PostToPid)
+bool simulate_mouse_click(pid_t target_pid, CGPoint location,
+                          bool is_double_click = false) {
+  if (target_pid <= 0) {
+    std::cout << "Invalid target PID: " << target_pid << std::endl;
+    return false;
+  }
+
+  std::cout << "Simulating mouse click at (" << location.x << ", " << location.y
+            << ") for process " << target_pid << std::endl;
+
+  // 创建鼠标按下事件
+  CGEventRef click_down =
+      CGEventCreateMouseEvent(nullptr,               // 源事件
+                              kCGEventLeftMouseDown, // 事件类型
+                              location,              // 位置
+                              kCGMouseButtonLeft     // 鼠标按钮
+      );
+
+  if (!click_down) {
+    std::cout << "Failed to create mouse down event" << std::endl;
+    return false;
+  }
+
+  // 创建鼠标释放事件
+  CGEventRef click_up = CGEventCreateMouseEvent(nullptr,             // 源事件
+                                                kCGEventLeftMouseUp, // 事件类型
+                                                location,            // 位置
+                                                kCGMouseButtonLeft   // 鼠标按钮
+  );
+
+  if (!click_up) {
+    std::cout << "Failed to create mouse up event" << std::endl;
+    CFRelease(click_down);
+    return false;
+  }
+
+  // 如果是双击，设置点击次数
+  if (is_double_click) {
+    CGEventSetIntegerValueField(click_down, kCGMouseEventClickState, 2);
+    CGEventSetIntegerValueField(click_up, kCGMouseEventClickState, 2);
+  }
+
+  // 发送事件到目标进程
+  CGEventPostToPid(target_pid, click_down);
+  usleep(10000); // 短暂延迟
+  CGEventPostToPid(target_pid, click_up);
+
+  // 清理
+  CFRelease(click_down);
+  CFRelease(click_up);
+
+  std::cout << "Mouse click simulation completed" << std::endl;
+  return true;
+}
+
+// 模拟鼠标移动 (使用CGEvent PostToPid)
+bool simulate_mouse_move(pid_t target_pid, CGPoint location) {
+  if (target_pid <= 0) {
+    std::cout << "Invalid target PID: " << target_pid << std::endl;
+    return false;
+  }
+
+  std::cout << "Simulating mouse move to (" << location.x << ", " << location.y
+            << ") for process " << target_pid << std::endl;
+
+  // 创建鼠标移动事件
+  CGEventRef mouse_move =
+      CGEventCreateMouseEvent(nullptr,            // 源事件
+                              kCGEventMouseMoved, // 事件类型
+                              location,           // 位置
+                              kCGMouseButtonLeft  // 鼠标按钮 (移动时不重要)
+      );
+
+  if (!mouse_move) {
+    std::cout << "Failed to create mouse move event" << std::endl;
+    return false;
+  }
+
+  // 发送事件到目标进程
+  CGEventPostToPid(target_pid, mouse_move);
+
+  // 清理
+  CFRelease(mouse_move);
+
+  std::cout << "Mouse move simulation completed" << std::endl;
+  return true;
+}
+
+// 测试输入模拟方法
+void test_input_simulation(CGWindowID window_id, const WindowInfo &win_info) {
+  std::cout << std::endl << "=== Testing Input Simulation ===" << std::endl;
+  std::cout << "Selected window: " << win_info.name << " ("
+            << win_info.owner_name << ")" << std::endl;
+  std::cout << "Window ID: " << window_id << std::endl;
+  std::cout << "Bounds: " << win_info.bounds.origin.x << ", "
+            << win_info.bounds.origin.y << " - " << win_info.bounds.size.width
+            << "x" << win_info.bounds.size.height << std::endl;
+
+  // 获取目标进程PID
+  pid_t target_pid = get_window_pid(window_id);
+  if (target_pid <= 0) {
+    std::cout << "Failed to get PID for window " << window_id << std::endl;
+    return;
+  }
+
+  std::cout << "Target process PID: " << target_pid << std::endl;
+
+  // 计算窗口中心点作为点击位置
+  CGPoint click_location = {
+      win_info.bounds.origin.x + win_info.bounds.size.width / 2,
+      win_info.bounds.origin.y + win_info.bounds.size.height / 2};
+
+  std::cout << std::endl << "Testing mouse click simulation..." << std::endl;
+
+  // 模拟鼠标移动到窗口中心
+  if (!simulate_mouse_move(target_pid, click_location)) {
+    std::cout << "Mouse move simulation failed" << std::endl;
+    return;
+  }
+
+  // 等待一下
+  usleep(500000); // 0.5秒
+
+  // 模拟鼠标点击
+  if (!simulate_mouse_click(target_pid, click_location, false)) {
+    std::cout << "Mouse click simulation failed" << std::endl;
+    return;
+  }
+
+  std::cout << "Input simulation test completed successfully!" << std::endl;
+  std::cout << "Check if the target window responded to the simulated click."
+            << std::endl;
 }
 
 int main() {
@@ -420,6 +585,9 @@ int main() {
 
   // 测试截图方法
   test_screencap_methods(selected_window->window_id, *selected_window);
+
+  // 测试输入模拟
+  test_input_simulation(selected_window->window_id, *selected_window);
 
   std::cout << std::endl << "=== Test Complete ===" << std::endl;
   return 0;
